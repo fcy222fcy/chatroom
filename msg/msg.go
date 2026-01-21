@@ -1,0 +1,108 @@
+package msg
+
+import (
+	"bufio"
+	"chat/utils"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"strings"
+	"sync"
+	"time"
+)
+
+type MessageType int
+
+const (
+	MessageJoin     MessageType = iota //用户登录
+	MessageRegister                    //用户注册
+	MessageLeave                       //用户离线
+	MessageChat                        //聊天
+	MessagePrivate                     //私聊
+	MessageList                        //查看在线用户列表
+	MessageHeart                       //心跳检测
+	MessageRank                        //活跃度排行
+)
+
+type Message struct {
+	Type     MessageType // 消息类型
+	Sender   string      // 发送者
+	Receiver string      // 接收者
+	Content  string      // 内容
+	Conn     net.Conn    // 发送者连接
+
+}
+
+// Client 客户端
+type Client struct {
+	Username   string    // 用户名
+	Conn       net.Conn  // 连接
+	LastActive time.Time // 心跳
+}
+
+// ChatRoom 聊天室
+type ChatRoom struct {
+	Clients map[string]*Client
+	MsgChan chan *Message
+	Mutex   sync.Mutex
+}
+
+// JsonMessage 序列化消息
+func (msg *Message) JsonMessage() ([]byte, error) {
+	return json.Marshal(msg)
+}
+
+// UnJsonMessage 反序列化
+func UnJsonMessage(msg []byte) (*Message, error) {
+	var message Message
+	err := json.Unmarshal(msg, &message)
+	return &message, err
+}
+
+// ReadJsonMessage 读序列化消息
+func ReadJsonMessage(reader *bufio.Reader) (*Message, error) {
+	message, err := utils.ReadMessage(reader)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, io.EOF
+		}
+		if strings.Contains(err.Error(), "forcibly closed") {
+			return nil, err
+		}
+		return nil, fmt.Errorf("ReadJsonMessage failed:%w", err)
+	}
+	return UnJsonMessage(message)
+}
+
+// SendJsonMessage 发送序列化消息
+func SendJsonMessage(conn net.Conn, message *Message) error {
+	jsonMessage, err := message.JsonMessage()
+	if err != nil {
+		return fmt.Errorf("SendJsonMessage failed:%w", err)
+	}
+	return utils.SendMessage(conn, jsonMessage)
+}
+
+// NewChatRoom 创建服务端实例
+func NewChatRoom() *ChatRoom {
+	return &ChatRoom{
+		Clients: make(map[string]*Client),
+		MsgChan: make(chan *Message, 100),
+	}
+}
+
+// AddClient 添加用户
+func (cr *ChatRoom) AddClient(username string, client *Client) {
+	cr.Mutex.Lock()
+	defer cr.Mutex.Unlock()
+	cr.Clients[username] = client
+}
+
+// RemoveClient 删除用户
+func (cr *ChatRoom) RemoveClient(username string) {
+	cr.Mutex.Lock()
+	defer cr.Mutex.Unlock()
+	delete(cr.Clients, username)
+}

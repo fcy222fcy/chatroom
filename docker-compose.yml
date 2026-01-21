@@ -1,0 +1,67 @@
+services:
+  mysql:
+    image: mysql:9.0
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: "123456"
+      MYSQL_DATABASE: database
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - go-net
+
+  redis:
+    image: redis:5.0
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server","--appendonly","yes"]
+    networks:
+      - go-net
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: go-server
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_DB: database
+      REDIS_ADDR: REDIS:6379
+    networks:
+      - go-net
+    ports:
+      - "8080:8080"
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: go-client
+    depends_on:
+      - server
+    environment:
+      SERVER_ADDR: go-server:8080
+    networks:
+      - go-net
+    command: tail -f /dev/null
+networks:
+  go-net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+
