@@ -2,12 +2,12 @@ package main
 
 import (
 	"chat/server/ServerFunction"
-
 	"log"
 	"net"
 )
 
 func main() {
+
 	// 初始化数据库
 	err := ServerFunction.InitDB()
 	if err != nil {
@@ -22,7 +22,6 @@ func main() {
 	}
 	log.Println("监听已启动，等待连接接入")
 
-	//直接使用defer 不能够处理err
 	defer func(Listen net.Listener) {
 		err := Listen.Close()
 		if err != nil {
@@ -30,18 +29,18 @@ func main() {
 		}
 	}(Listen)
 
-	// 打开 广播连接
+	go ServerFunction.StartCommandHandler()
 
 	//循环等待客户端连接
 	for {
 		conn, err := Listen.Accept()
 		if err != nil {
-			log.Println("connect err:", err)
+			log.Println("accept err:", err)
 		}
 		// 传进去一个conn------转化为一个client结构体
-		Client := ServerFunction.HandleConnection(conn)
+		Client := ServerFunction.Connection(conn)
 
-		Client.Process()
+		go Client.Process()
 
 	}
 }

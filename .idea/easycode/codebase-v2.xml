@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="com.obiscr.chatgpt.settings.EasyCodeState">
+    <option name="projectFiles" value="$PROJECT_DIR$/client/ClientFunction/ClientFunction.go;E:/桌面/chat/client/main/client.go;E:/桌面/chat/server/main/server.go;E:/桌面/chat/server/ServerFunction/ConstructMessage.go;E:/桌面/chat/server/ServerFunction/DbInit.go;E:/桌面/chat/server/ServerFunction/Definition.go;E:/桌面/chat/server/ServerFunction/HandleCommand.go;E:/桌面/chat/server/ServerFunction/HandleConnection.go;E:/桌面/chat/server/ServerFunction/Process.go;E:/桌面/chat/server/ServerFunction/UserService.go;E:/桌面/chat/server/ServerFunction/VerifyUser.go;E:/桌面/chat/Tool/tool.go" />
+  </component>
+</project>

@@ -1,47 +1,93 @@
 package ServerFunction
 
 import (
-	"bufio"
+	"chat/Tool"
 	"database/sql"
 	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"log"
 	"strings"
 )
 
-func (Client *Client) VerifyUser() string {
-	// 不能在登录注册里面将用户添加进入--在线map,不然其他用户能查到进该用户,但是该用户还没有进入聊天室
+func (Client *Client) VerifyUser() error {
+
+	defer func() {
+		if err := recover(); err != nil {
+			log.Println("panic:", err)
+		}
+	}()
+
 	conn := Client.Conn
-	reader := bufio.NewReader(conn)
-	// 一行一行读
+
+	//text, err := Tool.Recv(conn)
+	//if err != nil {
+	//	return err
+	//}
+	// 这里的代码把第一次输入的内容吞了
+	//fmt.Println("收到用户验证消息:", text)
+	//Tool.Send(conn, text+"\n")
+
 	for {
-		text, err := reader.ReadString('\n')
+
+		text, err := Tool.Recv(conn)
 		if err != nil {
 			// 返回结果待写
-			return "读取用户消息失败"
+			return fmt.Errorf("读取用户消息失败: %v", err)
 		}
-		fmt.Println("收到消息", text)
 
+		log.Println("收到用户验证消息:", text)
 		text = strings.TrimSpace(text)
 
 		if strings.HasPrefix(text, "LOGIN") {
 			username, password := Disassemble(text)
+			// 检查该用户是否在线
+			Mutex.Lock()
+			if _, exists := OnlineUser[username]; exists {
+				Mutex.Unlock()
+				err := Tool.Send(conn, "用户已登录\n")
+				if err != nil {
+					log.Println(err)
+				}
+				continue
+
+			}
+			Mutex.Unlock()
 			err := Login(username, password)
 			if err != nil {
-				return "登录失败"
+				err := Tool.Send(conn, "登录失败:"+err.Error()+"\n")
+				if err != nil {
+					log.Println(err)
+				}
+				continue
 			}
 			Client.UserName = username
-			return "登录成功"
-		} else if strings.HasPrefix(text, "Register") {
+			err = Tool.Send(conn, "登录成功\n")
+			if err != nil {
+				log.Println(err)
+			}
+			return nil
+		} else if strings.HasPrefix(text, "REGISTER") {
 			username, password := Disassemble(text)
 			err := Register(username, password)
 			if err != nil {
-				return "注册失败"
+				err = Tool.Send(conn, "注册失败:"+err.Error()+"\n")
+				if err != nil {
+					log.Println(err)
+				}
+				continue
 			}
 			Client.UserName = username
-			return "注册成功"
+			err = Tool.Send(conn, "注册成功\n")
+			if err != nil {
+				log.Println(err)
+			}
+			return nil
 		} else {
-			return "您输入的格式不对,应为 LOGIN 用户名 密码 || REGISTER 用户名 密码"
+			err := Tool.Send(conn, "您输入的格式不对,应为 LOGIN 用户名 密码 || REGISTER 用户名 密码")
+			if err != nil {
+				log.Println(err)
+			}
 		}
 	}
 }

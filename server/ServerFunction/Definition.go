@@ -13,27 +13,21 @@ type Client struct {
 	Addr     string
 }
 
+// 可以创建一个公共结构体--不能是常量,要不然值不能改变
+
 // 所有的用户存放在一个map中---暂时不考虑在线问题
 
 var OnlineUser = make(map[string]*Client)
 
 var Mutex sync.Mutex
 
-// 这里定义完管道之后,可以用于 分配路由的地方
-var (
-	// OnlineChan 加入聊天室提示---标识在线状态
-	OnlineChan = make(chan string, 100)
-	// 添加一个离开的
+// 使用管道来缓冲,写成一个管道,然后将消息类型放在里面
 
-	// BroadcastChan 群聊
-	BroadcastChan = make(chan *Message)
-	// PrivateChan 私聊
-	PrivateChan = make(chan *Message)
-	// ListChan 列出名单
-	ListChan = make(chan *Message)
-	// HelpChan 帮助提示
-	HelpChan = make(chan *Message)
-)
+// MessageChan 消息管道处理用户所有的,命令消息
+var MessageChan = make(chan *Message, 1000)
+
+// OnlineChan 在线通知管道,用于处理用户上线/下线通知
+var OnlineChan = make(chan *Message, 1000)
 
 // Message 结构体用来存放用户 消息
 type Message struct {
