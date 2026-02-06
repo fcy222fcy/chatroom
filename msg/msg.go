@@ -42,8 +42,8 @@ type Client struct {
 	LastActive time.Time // 心跳
 }
 
-// ChatRoom 聊天室
-type ChatRoom struct {
+// Hub 聊天室
+type Hub struct {
 	Clients map[string]*Client
 	MsgChan chan *Message
 	Mutex   sync.Mutex
@@ -85,24 +85,24 @@ func SendJsonMessage(conn net.Conn, message *Message) error {
 	return utils.SendMessage(conn, jsonMessage)
 }
 
-// NewChatRoom 创建服务端实例
-func NewChatRoom() *ChatRoom {
-	return &ChatRoom{
+// NewHub 创建服务端实例
+func NewHub() *Hub {
+	return &Hub{
 		Clients: make(map[string]*Client),
 		MsgChan: make(chan *Message, 100),
 	}
 }
 
 // AddClient 添加用户
-func (cr *ChatRoom) AddClient(username string, client *Client) {
-	cr.Mutex.Lock()
-	defer cr.Mutex.Unlock()
-	cr.Clients[username] = client
+func (hub *Hub) AddClient(username string, client *Client) {
+	hub.Mutex.Lock()
+	defer hub.Mutex.Unlock()
+	hub.Clients[username] = client
 }
 
 // RemoveClient 删除用户
-func (cr *ChatRoom) RemoveClient(username string) {
-	cr.Mutex.Lock()
-	defer cr.Mutex.Unlock()
-	delete(cr.Clients, username)
+func (hub *Hub) RemoveClient(username string) {
+	hub.Mutex.Lock()
+	defer hub.Mutex.Unlock()
+	delete(hub.Clients, username)
 }

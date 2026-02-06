@@ -25,6 +25,24 @@ func InitRedis() error {
 	return nil
 }
 
+// SetUserToRedis 将用户信息写入 Redis
+func SetUserToRedis(u *User) error {
+	key := "user:" + u.Username
+	err := RDB.HMSet(
+		key,
+		map[string]interface{}{
+			"id":       u.Id,
+			"username": u.Username,
+			"password": u.Password,
+		},
+	).Err()
+
+	if err != nil {
+		return fmt.Errorf("redis set user failed: %w", err)
+	}
+	return nil
+}
+
 // AddActivity 给用户追加活跃度
 func AddActivity(username string, number float64) error {
 	err := RDB.ZIncrBy("activityRank", number, username).Err()

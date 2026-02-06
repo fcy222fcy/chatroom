@@ -7,7 +7,7 @@ import (
 )
 
 // HandleStreams 处理streams流消息
-func (cr *ChatRoom) HandleStreams() {
+func (hub *Hub) HandleStreams() {
 	lastID := "0-0"
 	for {
 		messages, err := db.ReadStreamsData(1, lastID)
@@ -24,7 +24,7 @@ func (cr *ChatRoom) HandleStreams() {
 			content := m.Values["content"].(string)
 			// 系统广播分支
 			if sender == "系统广播" {
-				cr.broadcast(receiver, fmt.Sprintf("%s: %s", sender, content))
+				hub.broadcast(receiver, fmt.Sprintf("%s: %s", sender, content))
 				lastID = m.ID
 				continue
 			}
@@ -36,13 +36,13 @@ func (cr *ChatRoom) HandleStreams() {
 				Type:     MessageChat,
 			}
 			// 如果 sender 在线，再附加 Conn
-			if client, ok := cr.Clients[m.Values["sender"].(string)]; ok {
+			if client, ok := hub.Clients[m.Values["sender"].(string)]; ok {
 				msg.Conn = client.Conn
 			}
 			if msg.Receiver != "" {
-				cr.PrivateChat(msg)
+				hub.PrivateChat(msg)
 			} else {
-				cr.broadcast(msg.Sender, fmt.Sprintf("%s: %s", msg.Sender, msg.Content))
+				hub.broadcast(msg.Sender, fmt.Sprintf("%s: %s", msg.Sender, msg.Content))
 			}
 			_ = db.AddActivity(msg.Sender, 1)
 			lastID = m.ID // 更新游标，防止重复读取
@@ -51,20 +51,20 @@ func (cr *ChatRoom) HandleStreams() {
 }
 
 // HandleChanMessages 普通消息处理
-func (cr *ChatRoom) HandleChanMessages() {
+func (hub *Hub) HandleChanMessages() {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Printf("server room.HandleMessages panic recovered: %v\n", err)
 		}
 	}()
-	for msg := range cr.MsgChan {
+	for msg := range hub.MsgChan {
 		switch msg.Type {
 		case MessageHeart:
-			cr.PongHeart(msg.Sender)
+			hub.PongHeart(msg.Sender)
 		case MessageList:
-			cr.List(msg.Sender, msg.Conn)
+			hub.List(msg.Sender, msg.Conn)
 		case MessageLeave:
-			cr.Leave(msg.Sender)
+			hub.Leave(msg.Sender)
 		case MessageRank:
 			SendRank(msg.Sender, msg.Conn)
 		default:

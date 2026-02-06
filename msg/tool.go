@@ -3,7 +3,6 @@ package msg
 import (
 	"chat/db"
 	"chat/utils"
-	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/go-sql-driver/mysql"
@@ -14,9 +13,9 @@ import (
 )
 
 // broadcast 广播
-func (cr *ChatRoom) broadcast(sender, content string) {
-	cr.Mutex.Lock()
-	defer cr.Mutex.Unlock()
+func (hub *Hub) broadcast(sender, content string) {
+	hub.Mutex.Lock()
+	defer hub.Mutex.Unlock()
 
 	temp := &Message{
 		Type:    MessageChat,
@@ -24,7 +23,7 @@ func (cr *ChatRoom) broadcast(sender, content string) {
 		Content: content,
 	}
 
-	for username, client := range cr.Clients {
+	for username, client := range hub.Clients {
 		if username == sender {
 			continue
 		}
@@ -43,11 +42,11 @@ func (cr *ChatRoom) broadcast(sender, content string) {
 }
 
 // PrivateChat 私聊
-func (cr *ChatRoom) PrivateChat(msg *Message) {
-	cr.Mutex.Lock()
-	defer cr.Mutex.Unlock()
+func (hub *Hub) PrivateChat(msg *Message) {
+	hub.Mutex.Lock()
+	defer hub.Mutex.Unlock()
 
-	target, ok := cr.Clients[msg.Receiver]
+	target, ok := hub.Clients[msg.Receiver]
 	// 用户不在在线列表里面
 	if !ok {
 		_ = SendJsonMessage(msg.Conn, &Message{
@@ -71,12 +70,12 @@ func (cr *ChatRoom) PrivateChat(msg *Message) {
 }
 
 // List 查询在线列表
-func (cr *ChatRoom) List(name string, conn net.Conn) {
-	cr.Mutex.Lock()
-	defer cr.Mutex.Unlock()
+func (hub *Hub) List(name string, conn net.Conn) {
+	hub.Mutex.Lock()
+	defer hub.Mutex.Unlock()
 
 	list := "在线用户列表: "
-	for username := range cr.Clients {
+	for username := range hub.Clients {
 		list += username + "  "
 	}
 
@@ -115,6 +114,15 @@ func Register(msg *Message) {
 		}
 		return
 	}
+	user := &db.User{
+		Username: msg.Sender,
+		Password: msg.Content,
+	}
+	setErr := db.SetUserToRedis(user)
+	if setErr != nil {
+		log.Println("将用户信息写入 Redis 失败:", setErr)
+	}
+
 	// 注册成功
 	rr := SendJsonMessage(msg.Conn, &Message{
 		Type:    MessageRegister,
@@ -136,12 +144,13 @@ func isDuplicateKeyError(err error) bool {
 }
 
 // Join 处理登录消息
-func (cr *ChatRoom) Join(msg *Message) bool {
-	password, err := db.GetUserFromMySQL(msg.Sender)
+func (hub *Hub) Join(msg *Message) bool {
+	// 获取用户 redis+mysql
+	user, err := db.GetUserByUsername(msg.Sender)
 	// 查询失败的情况
 	if err != nil {
 		var respContent string
-		if errors.Is(err, sql.ErrNoRows) {
+		if err.Error() == "user not found" {
 			respContent = fmt.Sprintf("%s 不存在，请先注册", msg.Sender)
 		} else {
 			respContent = "登录失败，数据库异常"
@@ -157,17 +166,17 @@ func (cr *ChatRoom) Join(msg *Message) bool {
 		return false
 	}
 	// 判断密码
-	if password != msg.Content {
-		if r := SendJsonMessage(msg.Conn, &Message{
+	if user.Password != msg.Content {
+		if err1 := SendJsonMessage(msg.Conn, &Message{
 			Type:    MessageChat,
 			Content: "密码错误，请重新输入",
-		}); r != nil {
+		}); err1 != nil {
 			log.Println("发送密码错误响应错误:", err)
 		}
 		return false
 	}
-
-	if _, ok := cr.Clients[msg.Sender]; ok {
+	// 判断是否已经登录
+	if _, ok := hub.Clients[msg.Sender]; ok {
 		if r := SendJsonMessage(msg.Conn, &Message{
 			Type:    MessageChat,
 			Content: "该账户已登录",
@@ -176,6 +185,7 @@ func (cr *ChatRoom) Join(msg *Message) bool {
 		}
 		return false
 	}
+
 	// 登录成功
 	rr := SendJsonMessage(msg.Conn, &Message{
 		Type:    MessageRegister,
@@ -184,29 +194,32 @@ func (cr *ChatRoom) Join(msg *Message) bool {
 		log.Println("Register send error:", rr)
 		return false
 	}
-	client := &Client{Username: msg.Sender, Conn: msg.Conn, LastActive: time.Now()}
-	cr.AddClient(msg.Sender, client)
-	//content := fmt.Sprintf("系统广播：%s 加入了聊天室...", msg.Sender)
-	//cr.broadcast(msg.Sender, content)
 
-	// 发送历史消息
+	client := &Client{Username: msg.Sender, Conn: msg.Conn, LastActive: time.Now()}
+	hub.AddClient(msg.Sender, client)
+	//content := fmt.Sprintf("系统广播：%s 加入了聊天室...", msg.Sender)
+	//hub.broadcast(msg.Sender, content)
+
+	// 发送历史消息,可以返回一个切片或者map,取不同的字段
 	historyMsg, rrr := db.ShowHistory()
 	if rrr != nil {
 		log.Println(rrr)
 	}
 	message := &Message{
 		Type:    MessageChat,
-		Content: historyMsg}
+		Content: historyMsg,
+	}
 	r := SendJsonMessage(msg.Conn, message)
 	if r != nil {
 		log.Println("发送历史消息失败:", r)
 	}
+
 	// 加入streams流
 	_, err = db.AddStreamsData("系统广播", fmt.Sprintf("%s 加入了聊天室...", msg.Sender), msg.Sender)
 	if err != nil {
 		log.Println("写入 Redis Streams 失败:", err)
 	}
-	// 增加活跃度
+	// 登录 增加2活跃度
 	err = db.AddActivity(msg.Sender, 2)
 	if err != nil {
 		log.Println(msg.Sender, "登录增加活跃度失败 :", err)
@@ -215,19 +228,19 @@ func (cr *ChatRoom) Join(msg *Message) bool {
 }
 
 // Leave 处理退出消息
-func (cr *ChatRoom) Leave(username string) {
+func (hub *Hub) Leave(username string) {
 	_, err := db.AddStreamsData("系统广播", fmt.Sprintf("%s 离开了聊天室...", username), username)
 	if err != nil {
 		log.Println("Leave写入 Redis Streams 失败:", err)
 	}
-	cr.RemoveClient(username)
+	hub.RemoveClient(username)
 }
 
 // PongHeart 处理心跳
-func (cr *ChatRoom) PongHeart(username string) {
-	cr.Mutex.Lock()
-	defer cr.Mutex.Unlock()
-	if client, exists := cr.Clients[username]; exists {
+func (hub *Hub) PongHeart(username string) {
+	hub.Mutex.Lock()
+	defer hub.Mutex.Unlock()
+	if client, exists := hub.Clients[username]; exists {
 		client.LastActive = time.Now()
 		err := client.Conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 		if err != nil {
@@ -237,21 +250,21 @@ func (cr *ChatRoom) PongHeart(username string) {
 }
 
 // StartHeartbeatMonitor 服务端定期检测客户端心跳超时
-func (cr *ChatRoom) StartHeartbeatMonitor() {
+func (hub *Hub) StartHeartbeatMonitor() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		<-ticker.C
 		now := time.Now()
-		cr.Mutex.Lock()
-		for username, client := range cr.Clients {
+		hub.Mutex.Lock()
+		for username, client := range hub.Clients {
 			if now.Sub(client.LastActive) > 20*time.Second {
 				log.Printf("用户 %s 心跳超时，强制下线\n", username)
 				utils.CloseConn(client.Conn, username)
-				cr.Leave(username)
+				hub.Leave(username)
 			}
 		}
-		cr.Mutex.Unlock()
+		hub.Mutex.Unlock()
 	}
 }
 

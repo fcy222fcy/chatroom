@@ -23,7 +23,8 @@ func main() {
 			log.Println("Redis连接关闭失败..")
 		}
 	}()
-	room := msg.NewChatRoom()
+
+	hub := msg.NewHub()
 	// 连接MySQL
 	dbErr := db.InitDB()
 	if dbErr != nil {
@@ -36,9 +37,9 @@ func main() {
 	}
 	// 清理Redis数据
 	db.ClearRedis()
-	go room.HandleStreams()
-	go room.HandleChanMessages()
-	go room.StartHeartbeatMonitor()
+	go hub.HandleStreams()
+	go hub.HandleChanMessages()
+	go hub.StartHeartbeatMonitor()
 	listener, err := net.Listen("tcp", ":8080")
 	if err != nil {
 		log.Fatal("server start failed:", err)
@@ -57,6 +58,6 @@ func main() {
 			continue
 		}
 		//处理客户端
-		go tool.HandleClientMessage(conn, room)
+		go tool.HandleClientMessage(conn, hub)
 	}
 }
